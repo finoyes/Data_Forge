@@ -82,12 +82,43 @@ See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and
 
 ##  Setup & Running Instructions
 
-### 1. Prerequisites
+### Option A: Docker (Recommended for Teammates — Zero Local Setup)
+
+No need to install Python, Node, or dependencies. Simply have Docker Desktop installed:
+
+1. **Configure `.env`**:
+   ```bash
+   cp .env.example .env
+   # Add your LiveKit, Rime, Deepgram, and Gemini API keys to .env
+   ```
+
+2. **Start all services with Docker Compose**:
+   ```bash
+   docker compose up --build
+   ```
+   *Or with standard Docker:*
+   ```bash
+   docker build -t voiceforge-studybuddy .
+   docker run -p 5173:5173 -p 7880:7880 --env-file .env voiceforge-studybuddy
+   ```
+
+3. Open **`http://localhost:5173`** in your browser and click **🎙️ Start Studying**.
+
+4. **Run evaluation in Docker**:
+   ```bash
+   docker compose run --rm studybuddy evaluate --simulate
+   ```
+
+---
+
+### Option B: Local Setup (Without Docker)
+
+#### 1. Prerequisites
 - Python 3.10+
 - Node.js 18+
 - API keys configured in `.env` (LiveKit, Rime, Deepgram, Google Gemini)
 
-### 2. Start Services
+#### 2. Start Services
 
 ```bash
 # Terminal 1: Token Server
@@ -104,7 +135,7 @@ npm run dev
 
 Open `http://localhost:5173` and click **🎙️ Start Studying**.
 
-### 3. Run Acceptance Test Suite
+#### 3. Run Acceptance Test Suite
 
 Evaluate the system against all Problem 2 acceptance criteria:
 

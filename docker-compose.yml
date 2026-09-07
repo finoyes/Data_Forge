@@ -1,0 +1,16 @@
+services:
+  studybuddy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voiceforge-studybuddy
+    restart: unless-stopped
+    ports:
+      - "5173:5173"   # Web Frontend (Vite)
+      - "7880:7880"   # Token Server
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONUNBUFFERED=1
+      - VITE_TOKEN_SERVER_URL=http://localhost:7880/token

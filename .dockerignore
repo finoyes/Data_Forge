@@ -1,0 +1,35 @@
+# Version control
+.git
+.gitignore
+
+# Environment files with secrets
+.env
+**/.env
+*.env.local
+.env.*
+!*.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Node
+node_modules/
+**/node_modules/
+frontend/dist/
+
+# Runtime data & logs
+latency_log.jsonl
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

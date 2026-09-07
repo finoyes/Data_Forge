@@ -1,5 +1,6 @@
-# LiveKit Agents core
+# LiveKit Agents core & API
 livekit-agents>=1.0,<2.0
+livekit-api>=0.8.0
 
 # Plugins
 livekit-plugins-rime>=0.1
