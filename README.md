@@ -1,4 +1,4 @@
-# 🎓 VoiceForge StudyBuddy
+#  VoiceForge StudyBuddy
 
 **A voice-native study tutor with sub-300ms barge-in interruption & recovery, powered by Rime TTS.**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## 🎯 The Product & The Challenge
+##  The Product & The Challenge
 
 **User:** A student reviewing study material hands-free — commuting, exercising, cooking, or anytime looking at a screen isn't possible.
 
@@ -16,7 +16,7 @@
 
 ---
 
-## ⚡ Problem 2: Interruption & Recovery Performance
+##  Problem 2: Interruption & Recovery Performance
 
 | Metric | Target | Actual | Verdict |
 |---|---|---|---|
@@ -29,7 +29,7 @@ See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and
 
 ---
 
-## 🏗️ Architecture & Generation Fencing
+##  Architecture & Generation Fencing
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -67,7 +67,7 @@ See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and
 
 ---
 
-## 🔧 Technology Stack
+##  Technology Stack
 
 | Component | Technology | Role |
 |---|---|---|
@@ -80,7 +80,7 @@ See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and
 
 ---
 
-## 🚀 Setup & Running Instructions
+##  Setup & Running Instructions
 
 ### 1. Prerequisites
 - Python 3.10+
@@ -118,7 +118,7 @@ python scripts/evaluate_interruption.py
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 dataforge/
@@ -146,6 +146,6 @@ dataforge/
 
 ---
 
-## 📜 License
+##  License
 
 Built for the DataForge × Pathway × Rime Hackathon.
