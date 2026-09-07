@@ -1,0 +1,41 @@
+# Environment files (contains secrets)
+.env
+**/.env
+*.env.local
+.env.*
+!*.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Node
+node_modules/
+**/node_modules/
+frontend/dist/
+dist/
+
+# Runtime data
+latency_log.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rime PS (hackathon brief PDF — not code)
+*.pdf
+
+# Extracted text
+rime_ps_text.txt

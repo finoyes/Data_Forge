@@ -1,0 +1,8 @@
+/* Reset — minimal baseline for VoiceForge StudyBuddy */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
