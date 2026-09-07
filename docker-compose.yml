@@ -14,3 +14,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - VITE_TOKEN_SERVER_URL=http://localhost:7880/token
+    volumes:
+      - ./frontend/src:/app/frontend/src
+      - ./frontend/index.html:/app/frontend/index.html
+      - ./agent:/app/agent
