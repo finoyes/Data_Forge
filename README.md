@@ -20,10 +20,10 @@
 
 | Metric | Target | Actual | Verdict |
 |---|---|---|---|
-| **Interruption-to-Silence Latency (P50)** | < 300 ms | **240.5 ms** (P90: 270.8 ms) | ✅ **PASS** |
-| **Stale Response Leakage Rate** | 0.0% (0 leaks) | **0.0%** | ✅ **PASS** |
-| **Tool Generation Fencing Efficacy** | 100.0% | **100.0%** (3/3 safely discarded) | ✅ **PASS** |
-| **Conversational Recovery Time (P50)** | < 1500 ms | **1196.5 ms** | ✅ **PASS** |
+| **Interruption-to-Silence Latency (P50)** | < 300 ms | **240.5 ms** (P90: 270.8 ms) |  **PASS** |
+| **Stale Response Leakage Rate** | 0.0% (0 leaks) | **0.0%** |  **PASS** |
+| **Tool Generation Fencing Efficacy** | 100.0% | **100.0%** (3/3 safely discarded) |  **PASS** |
+| **Conversational Recovery Time (P50)** | < 1500 ms | **1196.5 ms** |  **PASS** |
 
 See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and methodology.
 
