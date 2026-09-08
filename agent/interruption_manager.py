@@ -157,6 +157,18 @@ class InterruptionManager:
         )
         return new_gen, now
 
+    def cancel_false_interruption(self) -> None:
+        """
+        Called when detected speech turns out to be a passive backchannel or non-verbal noise.
+        Removes the false interruption from history and restores state.
+        """
+        if self._current_event:
+            if self._current_event in self.history:
+                self.history.remove(self._current_event)
+            self._current_event = None
+            self.state.last_interrupted_gen_id = None
+            logger.info("↩️ False interruption cancelled from history (backchannel/noise detected)")
+
     def on_audio_stopped(self) -> Optional[float]:
         """
         Called when audio playback ceases (either naturally or forced cancellation).

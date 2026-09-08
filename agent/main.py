@@ -90,6 +90,21 @@ tracker = LatencyTracker()
 failure_handler = FailureHandler()
 interruption_mgr = InterruptionManager()
 current_turn_index = {"value": -1}
+global_dispatcher = [None]  # Populated with dispatch_data during entrypoint
+
+# Track active barge-in attempt between speech onset and transcript confirmation
+pending_interruption = {
+    "active": False,
+    "interrupt_ts": 0.0,
+    "latency_ms": None,
+    "source": "",
+}
+
+# Common conversational backchannel cues (listening nods, not substantive commands)
+BACKCHANNELS = {
+    "uh-huh", "uh huh", "yeah", "yes", "mhm", "mm", "mm-hmm", "mm hmm",
+    "okay", "ok", "hmm", "yep", "right", "ah", "got it", "i see",
+}
 
 
 # ─── Tool Definitions with Generation Fencing ────────────────────────────────
@@ -119,10 +134,39 @@ async def lookup_topic(topic: str) -> str:
         turn_idx = current_turn_index["value"]
         if turn_idx >= 0:
             tracker.mark_stale_tool_discarded(turn_idx)
+        # Update frontend telemetry immediately when a tool is cancelled
+        if global_dispatcher[0]:
+            global_dispatcher[0]({
+                "type": "metrics_update",
+                "turn_index": turn_idx,
+                "interruption_latency_ms": None,
+                "summary": interruption_mgr.get_summary(),
+            })
         return "Lookup result discarded because you asked something else."
 
     logger.info("🔍 [Gen %d] Tool call: lookup_topic('%s') — completed valid", gen_id, topic)
     return result
+
+
+class StudyAgent(Agent):
+    """Voice study tutor Agent with semantic backchannel recognition."""
+
+    async def on_user_turn_completed(
+        self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
+    ) -> None:
+        raw_text = getattr(new_message, "text_content", "") or ""
+        clean_text = raw_text.lower().strip().strip(".,!?:")
+
+        # If user only said a passive backchannel, raise StopResponse so paused speech smoothly resumes
+        if clean_text in BACKCHANNELS:
+            logger.info(
+                "🎧 Passive backchannel '%s' detected — suppressing LLM reply so paused speech resumes",
+                clean_text,
+            )
+            raise llm.StopResponse()
+
+        await super().on_user_turn_completed(turn_ctx, new_message)
+
 
 
 # ─── Agent Lifecycle ─────────────────────────────────────────────────────────
@@ -154,6 +198,17 @@ async def entrypoint(ctx: JobContext) -> None:
 
     def dispatch_data(payload: dict):
         asyncio.create_task(send_data_channel(payload))
+
+    # Expose dispatcher globally so tool fencing can broadcast live updates
+    global_dispatcher[0] = dispatch_data
+
+    # Send initial telemetry snapshot on connect
+    dispatch_data({
+        "type": "metrics_update",
+        "turn_index": 0,
+        "interruption_latency_ms": None,
+        "summary": interruption_mgr.get_summary(),
+    })
 
     # ─── Pipeline components ─────────────────────────────────────────────
 
@@ -221,20 +276,120 @@ async def entrypoint(ctx: JobContext) -> None:
 
     vad = ctx.proc.userdata.get("vad") or silero.VAD.load()
 
+    # Balanced 3-pillar interruption handling:
+    # 1. min_duration=0.35s filters out micro-noise / coughs (<350ms)
+    # 2. min_words=1 requires at least 1 STT word for permanent turn commit
+    # 3. backchannel_boundary=None eliminates the 1s lockout window
+    # 4. resume_false_interruption=True with 1.0s timeout allows clean recovery on backchannels
     session = AgentSession(
         stt=stt_engine,
         llm=llm_engine,
         tts=tts_engine,
         vad=vad,
-        allow_interruptions=True,
+        turn_handling={
+            "interruption": {
+                "enabled": True,
+                "mode": "vad",
+                "min_duration": 0.35,
+                "min_words": 1,
+                "resume_false_interruption": True,
+                "false_interruption_timeout": 1.0,
+                "backchannel_boundary": None,
+            },
+        },
     )
 
-    study_agent = Agent(
+    study_agent = StudyAgent(
         instructions=SYSTEM_PROMPT,
         tools=[lookup_topic],
     )
 
     # ─── Event Hooks & Interruption Fencing ───────────────────────────────
+
+    @session.on("user_state_changed")
+    def on_user_state_changed(ev):
+        """Fired the instant user voice activity transitions state."""
+        new_state = getattr(ev, "new_state", "")
+        if new_state == "speaking":
+            is_agent_busy = (
+                interruption_mgr.is_speaking
+                or getattr(session, "agent_state", "") in ("speaking", "thinking")
+            )
+            if is_agent_busy and not pending_interruption["active"]:
+                now = time.monotonic()
+                pending_interruption["active"] = True
+                pending_interruption["interrupt_ts"] = now
+                pending_interruption["source"] = "user_state_changed"
+                logger.info(
+                    "⚡ [SPEECH ONSET] User voice activity detected during active agent turn (ts=%.4f)",
+                    now,
+                )
+
+    @session.on("agent_false_interruption")
+    def on_agent_false_interruption(ev):
+        """Fired when LiveKit determines an interruption was false and resumes audio."""
+        resumed = getattr(ev, "resumed", False)
+        logger.info("🎧 LiveKit false interruption event: speech resumed = %s", resumed)
+        if pending_interruption["active"]:
+            pending_interruption["active"] = False
+            interruption_mgr.cancel_false_interruption()
+            dispatch_data({
+                "type": "metrics_update",
+                "summary": interruption_mgr.get_summary(),
+            })
+
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(ev):
+        """Fired when agent transitions state (speaking, listening, thinking)."""
+        turn_idx = current_turn_index["value"]
+        new_state = getattr(ev, "new_state", "")
+        old_state = getattr(ev, "old_state", "")
+
+        if new_state == "speaking":
+            gen_id = interruption_mgr.current_generation_id
+            if not interruption_mgr.on_speaking_started(gen_id):
+                # Stale generation was blocked!
+                logger.warning("🛡️ Blocked speech start for stale generation %d", gen_id)
+                return
+
+            if turn_idx >= 0:
+                tracker.mark_first_audio_out(
+                    turn_index=turn_idx,
+                    provider="rime",
+                )
+            dispatch_data({"type": "agent_state", "state": "speaking", "gen": gen_id})
+
+        elif old_state in ("speaking", "thinking"):
+            stopped_ts = time.monotonic()
+            interruption_latency = None
+
+            # If user voice activity was detected, measure exact barge-in latency to pause/silence
+            if pending_interruption["active"]:
+                interruption_latency = round(
+                    (stopped_ts - pending_interruption["interrupt_ts"]) * 1000, 2
+                )
+                pending_interruption["latency_ms"] = interruption_latency
+                logger.info(
+                    "🔇 Agent audio paused/halted: barge-in latency = %.1fms",
+                    interruption_latency,
+                )
+
+            if turn_idx >= 0:
+                metrics = tracker.flush_turn(turn_idx)
+                summary = interruption_mgr.get_summary()
+                dispatch_data({
+                    "type": "metrics_update",
+                    "turn_index": turn_idx,
+                    "interruption_latency_ms": interruption_latency,
+                    "summary": summary,
+                })
+                if metrics:
+                    dispatch_data({
+                        "type": "turn_completed",
+                        "turn_index": turn_idx,
+                        "e2e_ms": metrics.e2e_latency_ms,
+                        "was_interrupted": metrics.was_interrupted,
+                    })
 
     @session.on("user_input_transcribed")
     def on_user_input_transcribed(ev):
@@ -246,18 +401,54 @@ async def entrypoint(ctx: JobContext) -> None:
         if not user_text:
             return
 
-        # Check if user barged in while agent was speaking
-        was_speaking = interruption_mgr.is_speaking
-        if was_speaking:
+        clean_text = user_text.lower().strip().strip(".,!?:")
+
+        # ── Check if this was purely a passive backchannel (e.g. 'yeah', 'uh-huh')
+        if clean_text in BACKCHANNELS:
+            logger.info(
+                "🎧 User said passive backchannel '%s' — letting paused speech resume",
+                user_text,
+            )
+            pending_interruption["active"] = False
+            interruption_mgr.cancel_false_interruption()
+            dispatch_data({
+                "type": "metrics_update",
+                "summary": interruption_mgr.get_summary(),
+            })
+            return
+
+        # ── Check if user barged in with an intentional command or question
+        was_barge_in = pending_interruption["active"]
+        curr_turn = current_turn_index["value"]
+
+        if was_barge_in:
             new_gen, interrupt_ts = interruption_mgr.on_user_interrupt(user_text)
-            curr_turn = current_turn_index["value"]
+            lat_ms = pending_interruption["latency_ms"]
+            if lat_ms is not None and interruption_mgr._current_event:
+                interruption_mgr._current_event.latency_ms = lat_ms
+                interruption_mgr._current_event.audio_stopped_ts = interrupt_ts + (lat_ms / 1000.0)
+
             if curr_turn >= 0:
                 tracker.mark_interruption(curr_turn, interrupt_ts, new_gen)
+                if lat_ms is not None:
+                    tracker.mark_audio_stopped(
+                        curr_turn, interrupt_ts + (lat_ms / 1000.0)
+                    )
+
+            pending_interruption["active"] = False
+
+            # Broadcast real-time interruption event to UI centerpiece & telemetry
             dispatch_data({
                 "type": "interrupted",
                 "interruption_ts": interrupt_ts,
                 "generation_id": new_gen,
                 "user_text": user_text,
+            })
+            dispatch_data({
+                "type": "metrics_update",
+                "turn_index": curr_turn,
+                "interruption_latency_ms": lat_ms,
+                "summary": interruption_mgr.get_summary(),
             })
         else:
             new_gen = interruption_mgr.start_new_generation()
@@ -292,47 +483,8 @@ async def entrypoint(ctx: JobContext) -> None:
             new_gen,
             user_text[:80],
             " [STRESS]" if is_stress else "",
-            " [BARGE-IN]" if was_speaking else "",
+            " [BARGE-IN]" if was_barge_in else "",
         )
-
-    @session.on("agent_state_changed")
-    def on_agent_state_changed(ev):
-        """Fired when agent transitions state (speaking, listening, thinking)."""
-        turn_idx = current_turn_index["value"]
-        new_state = getattr(ev, "new_state", "")
-        old_state = getattr(ev, "old_state", "")
-
-        if new_state == "speaking":
-            gen_id = interruption_mgr.current_generation_id
-            if not interruption_mgr.on_speaking_started(gen_id):
-                # Stale generation was blocked!
-                logger.warning("🛡️ Blocked speech start for stale generation %d", gen_id)
-                return
-
-            if turn_idx >= 0:
-                tracker.mark_first_audio_out(
-                    turn_index=turn_idx,
-                    provider="rime",
-                )
-            dispatch_data({"type": "agent_state", "state": "speaking", "gen": gen_id})
-
-        elif old_state == "speaking":
-            # Audio stopped playing
-            stopped_ts = time.monotonic()
-            interruption_latency = interruption_mgr.on_audio_stopped()
-
-            if interruption_latency is not None and turn_idx >= 0:
-                tracker.mark_audio_stopped(turn_idx, stopped_ts)
-
-            if turn_idx >= 0:
-                metrics = tracker.flush_turn(turn_idx)
-                summary = interruption_mgr.get_summary()
-                dispatch_data({
-                    "type": "metrics_update",
-                    "turn_index": turn_idx,
-                    "interruption_latency_ms": interruption_latency,
-                    "summary": summary,
-                })
 
     @session.on("tool_execution_updated")
     def on_tool_execution(ev):
@@ -349,9 +501,18 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     logger.info("🧠 LLM: %s (%s)", active_provider, active_model)
 
-    # Speak greeting
+    # Speak greeting as Turn 0 so greeting interruptions are tracked in telemetry
+    turn_idx = tracker.next_turn_index()
+    current_turn_index["value"] = turn_idx
     gen_id = interruption_mgr.start_new_generation()
     interruption_mgr.on_speaking_started(gen_id)
+    tracker.mark_first_audio_out(
+        turn_index=turn_idx,
+        provider="rime",
+        agent_text="Greeting",
+    )
+    dispatch_data({"type": "agent_state", "state": "speaking", "gen": gen_id})
+
     speech = session.say(
         "Hey there! I'm StudyBuddy, your voice-first study tutor. "
         "Feel free to interrupt me at any time if you want to change topics or ask something new. "
@@ -363,7 +524,8 @@ async def entrypoint(ctx: JobContext) -> None:
     except Exception as e:
         logger.debug("Greeting playback ended/interrupted: %s", e)
     finally:
-        interruption_mgr.on_audio_stopped()
+        if interruption_mgr.is_speaking:
+            interruption_mgr.on_audio_stopped()
 
 
 # ─── Worker Entry Point ─────────────────────────────────────────────────────
@@ -375,3 +537,4 @@ if __name__ == "__main__":
             prewarm_fnc=prewarm,
         ),
     )
+
