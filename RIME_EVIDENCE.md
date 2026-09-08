@@ -158,5 +158,5 @@ python scripts/evaluate_interruption.py --simulate
 ## Limitations
 
 1. **VAD Environmental Noise:** Silero VAD sensitivity may be affected by loud background noises or low-quality laptop microphones. In noisy rooms, adjusting VAD threshold or using a headset ensures optimal barge-in detection.
-2. **Network Jitter:** All API calls (Deepgram STT, Google Gemini, Rime TTS) traverse the public internet. High packet loss can add jitter to audio cancellation confirmation.
+2. **Network Jitter:** All API calls (Deepgram STT, xAI Grok, Rime TTS) traverse the public internet. High packet loss can add jitter to audio cancellation confirmation.
 3. **Browser Audio Echo:** For best results during testing, wear headphones to prevent speaker audio from bleeding directly back into the microphone.

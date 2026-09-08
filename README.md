@@ -50,7 +50,7 @@ See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and
 │       │                    ▲                        ▲          │
 │       ▼                    │                        │          │
 │  ┌──────────────────────────────────────────────────────┐      │
-│  │ Google Gemini 2.0 Flash (Text mode reasoning)        │      │
+│  │ xAI Grok (Text mode reasoning)                       │      │
 │  │ Slow Tool Simulation: simulate_slow_lookup()         │      │
 │  │ Cooperatively aborts when generation becomes stale   │      │
 │  └──────────────────────────────────────────────────────┘      │
@@ -74,7 +74,7 @@ See [RIME_EVIDENCE.md](RIME_EVIDENCE.md) for full acceptance testing details and
 | **Voice Synthesis** | **Rime TTS (`mistv3` / `luna`)** | Primary spoken voice output with ultra-low TTFB |
 | **Speech Recognition** | **Deepgram Nova-3** | Streaming STT with real-time barge-in detection |
 | **Orchestration** | **LiveKit Agents** | WebRTC room management, audio routing |
-| **Reasoning** | **Google Gemini 2.0 Flash (text)** | Spoken-friendly tutoring & quiz evaluation |
+| **Reasoning** | **xAI Grok (`grok-2-latest`)** | Spoken-friendly tutoring & quiz evaluation |
 | **Voice Activity** | **Silero VAD** | Pre-warmed voice boundary detection |
 | **Frontend** | **React + Vite + TypeScript** | Audio visualizer & real-time metrics dashboard |
 
@@ -89,7 +89,7 @@ No need to install Python, Node, or dependencies. Simply have Docker Desktop ins
 1. **Configure `.env`**:
    ```bash
    cp .env.example .env
-   # Add your LiveKit, Rime, Deepgram, and Gemini API keys to .env
+   # Add your LiveKit, Rime, Deepgram, and xAI Grok API keys to .env
    ```
 
 2. **Start all services with Docker Compose**:
@@ -116,7 +116,7 @@ No need to install Python, Node, or dependencies. Simply have Docker Desktop ins
 #### 1. Prerequisites
 - Python 3.10+
 - Node.js 18+
-- API keys configured in `.env` (LiveKit, Rime, Deepgram, Google Gemini)
+- API keys configured in `.env` (LiveKit, Rime, Deepgram, xAI Grok)
 
 #### 2. Start Services
 

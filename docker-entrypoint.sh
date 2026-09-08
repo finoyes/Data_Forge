@@ -70,6 +70,7 @@ case "$MODE" in
         else
             echo "[3/3] Starting Voice Agent Worker (connecting to LiveKit)..."
             cd agent
+            python -m pip install --no-cache-dir -q -r requirements.txt 2>/dev/null || true
             python main.py dev
         fi
         ;;

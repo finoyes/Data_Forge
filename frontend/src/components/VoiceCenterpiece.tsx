@@ -37,7 +37,7 @@ export const VoiceCenterpiece: React.FC<VoiceCenterpieceProps> = ({
           emoji: '✨',
           label: 'Thinking & Routing',
           statusClass: 'status-thinking',
-          hint: 'Generating response with Gemini Flash...',
+          hint: 'Generating response with Grok...',
         };
       case 'speaking':
         return {

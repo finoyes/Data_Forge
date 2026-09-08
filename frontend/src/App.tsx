@@ -18,10 +18,11 @@ import { TranscriptFeed } from './components/TranscriptFeed';
 
 // ─── Token Server & Environment ──────────────────────────────────────────
 const TOKEN_SERVER_URL = import.meta.env.VITE_TOKEN_SERVER_URL || 'http://localhost:7880/token';
-const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || '';
+const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || 'wss://data-forge-409dayt7.livekit.cloud';
 
 function App() {
   const [token, setToken] = useState<string>('');
+  const [liveKitUrl, setLiveKitUrl] = useState<string>(LIVEKIT_URL);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string>('');
@@ -34,13 +35,17 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          room: 'studybuddy-room',
+          room: `studybuddy-${Date.now()}`,
           identity: `student-${Date.now()}`,
         }),
       });
       if (!resp.ok) throw new Error(`Token server returned status ${resp.status}`);
       const data = await resp.json();
       setToken(data.token);
+      const url = data.url || data.serverUrl || LIVEKIT_URL;
+      if (url) {
+        setLiveKitUrl(url);
+      }
       setIsConnected(true);
     } catch (e: any) {
       console.error('Token fetch failed:', e);
@@ -78,7 +83,7 @@ function App() {
   return (
     <LiveKitRoom
       token={token}
-      serverUrl={LIVEKIT_URL}
+      serverUrl={liveKitUrl}
       connect={true}
       audio={true}
       video={false}

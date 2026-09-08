@@ -45,5 +45,5 @@ RUN chmod +x docker-entrypoint.sh \
 # Expose Web Frontend (5173) and Token Server (7880)
 EXPOSE 5173 7880
 
-ENTRYPOINT ["./docker-entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "./docker-entrypoint.sh"]
 CMD ["all"]

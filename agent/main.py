@@ -7,7 +7,7 @@ Architecture:
   User Mic → WebRTC → LiveKit Room
     → Deepgram STT (Nova-3) — streaming speech-to-text
     → InterruptionManager — generation ID fencing & barge-in tracking
-    → Google Gemini Flash (text mode) — reasoning / quiz logic
+    → xAI Grok (text mode) — reasoning / quiz logic
     → Rime TTS (Mist v3, speaker: luna, lang: eng) — streaming speech synthesis
     → WebRTC → User Speaker
 
@@ -37,7 +37,25 @@ from livekit.agents import (
     Agent,
     AgentSession,
 )
-from livekit.plugins import deepgram, google, rime, silero
+from livekit.plugins import deepgram, rime, silero
+
+try:
+    from livekit.plugins import openai
+except ImportError:
+    import subprocess
+    import sys
+    req_path = Path(__file__).parent / "requirements.txt"
+    print(f"⚠️ [NOTICE] 'livekit-plugins-openai' is missing from the environment.")
+    print(f"   Auto-installing updated requirements from {req_path}...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", str(req_path)])
+        from livekit.plugins import openai
+        print("✅ Successfully installed missing dependencies!")
+    except Exception as err:
+        print(f"❌ Failed to auto-install dependencies: {err}")
+        print("👉 To resolve permanently, please run: docker compose up --build")
+        raise
+
 
 from latency import LatencyTracker
 from tutor import SYSTEM_PROMPT, simulate_slow_lookup
@@ -144,10 +162,55 @@ async def entrypoint(ctx: JobContext) -> None:
         language="en-US",
     )
 
-    llm_engine = google.LLM(
-        model="gemini-2.0-flash",
-        temperature=0.7,
-    )
+    # ─── LLM: Auto-detect Groq (gsk_...) vs xAI Grok (xai-...) ───────────
+    llm_key = (
+        os.environ.get("GROQ_API_KEY")
+        or os.environ.get("XAI_API_KEY")
+        or os.environ.get("GROK_API_KEY")
+        or ""
+    ).strip()
+
+    if llm_key.startswith("gsk_"):
+        active_provider = "Groq"
+        # Determine available Groq model dynamically or from env
+        configured_model = os.environ.get("GROQ_MODEL") or os.environ.get("LLM_MODEL")
+        if configured_model:
+            active_model = configured_model
+        else:
+            # Query Groq /models to verify active models on this specific key
+            candidate_models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b", "groq/compound"]
+            active_model = "openai/gpt-oss-120b"
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {llm_key}", "User-Agent": "VoiceForge/1.0"}
+                )
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    avail_ids = {m["id"] for m in json.loads(resp.read().decode()).get("data", [])}
+                    for cand in candidate_models:
+                        if cand in avail_ids:
+                            active_model = cand
+                            break
+            except Exception as err:
+                logger.debug("Could not query Groq models dynamically: %s", err)
+
+        logger.info("⚡ [LLM] Detected Groq API key (gsk_...). Provider: Groq | Model: %s", active_model)
+        llm_engine = openai.LLM(
+            model=active_model,
+            base_url="https://api.groq.com/openai/v1",
+            api_key=llm_key,
+            temperature=0.7,
+        )
+    else:
+        active_provider = "xAI Grok"
+        active_model = os.environ.get("GROK_MODEL") or os.environ.get("XAI_MODEL") or "grok-2-latest"
+        logger.info("🧠 [LLM] Provider: xAI Grok | Model: %s", active_model)
+        llm_engine = openai.LLM.with_x_ai(
+            model=active_model,
+            api_key=llm_key,
+            temperature=0.7,
+        )
 
     tts_engine = rime.TTS(
         model=RIME_MODEL,
@@ -284,6 +347,7 @@ async def entrypoint(ctx: JobContext) -> None:
         "🔊 TTS: RIME | Model: %s | Speaker: %s | Lang: %s",
         RIME_MODEL, RIME_SPEAKER, RIME_LANGUAGE,
     )
+    logger.info("🧠 LLM: %s (%s)", active_provider, active_model)
 
     # Speak greeting
     gen_id = interruption_mgr.start_new_generation()
@@ -295,7 +359,7 @@ async def entrypoint(ctx: JobContext) -> None:
         allow_interruptions=True,
     )
     try:
-        await speech.wait_if_not_interrupted()
+        await speech
     except Exception as e:
         logger.debug("Greeting playback ended/interrupted: %s", e)
     finally:

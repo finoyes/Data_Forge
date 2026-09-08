@@ -31,6 +31,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # LiveKit credentials from environment
 LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
+LIVEKIT_URL = os.environ.get("LIVEKIT_URL") or os.environ.get("VITE_LIVEKIT_URL") or "wss://data-forge-409dayt7.livekit.cloud"
 
 if not LIVEKIT_API_KEY or not LIVEKIT_API_SECRET or "your_" in LIVEKIT_API_KEY:
     print("[WARN] LIVEKIT_API_KEY and LIVEKIT_API_SECRET not configured in .env")
@@ -58,8 +59,10 @@ class TokenHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             data = {}
 
-        room = data.get("room", "studybuddy-room")
-        identity = data.get("identity", f"student-{int(time.time())}")
+        room = data.get("room")
+        if not room or room == "studybuddy-room":
+            room = f"studybuddy-{int(time.time() * 1000)}"
+        identity = data.get("identity") or f"student-{int(time.time() * 1000)}"
 
         try:
             from livekit.api import AccessToken, VideoGrants
@@ -100,6 +103,8 @@ class TokenHandler(BaseHTTPRequestHandler):
             "token": jwt_str,
             "room": room,
             "identity": identity,
+            "url": LIVEKIT_URL,
+            "serverUrl": LIVEKIT_URL,
         }).encode())
 
         print(f"[OK] Token issued for {identity} -> room={room}")

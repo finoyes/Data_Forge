@@ -5,7 +5,8 @@ livekit-api>=0.8.0
 # Plugins
 livekit-plugins-rime>=0.1
 livekit-plugins-deepgram>=0.1
-livekit-plugins-google>=0.1
+livekit-plugins-openai>=0.1
+livekit-plugins-xai>=0.1
 livekit-plugins-silero>=0.1
 
 # Utilities
