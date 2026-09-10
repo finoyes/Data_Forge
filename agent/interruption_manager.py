@@ -121,15 +121,17 @@ class InterruptionManager:
         logger.info("🔊 [Gen %d] Rime audio output started", gen_id)
         return True
 
-    def on_user_interrupt(self, user_text: str = "") -> tuple[int, float]:
+    def on_user_interrupt(
+        self, user_text: str = "", interrupt_ts: Optional[float] = None
+    ) -> tuple[int, float]:
         """
         Called the instant user speech is detected while the agent was speaking
         or thinking. Fences the previous generation and bumps generation_id.
         """
-        now = time.monotonic()
+        ts = interrupt_ts if interrupt_ts is not None else time.monotonic()
         prev_gen = self.state.generation_id
         self.state.last_interrupted_gen_id = prev_gen
-        self.state.interruption_ts = now
+        self.state.interruption_ts = ts
 
         # Monotonically advance generation_id so in-flight tasks from prev_gen are fenced out
         self.state.generation_id += 1
@@ -143,7 +145,7 @@ class InterruptionManager:
         # Record interruption event for the interrupted generation
         self._current_event = InterruptionEvent(
             generation_id=prev_gen,
-            interruption_ts=now,
+            interruption_ts=ts,
             user_prompt=user_text,
         )
         self.history.append(self._current_event)
@@ -152,10 +154,10 @@ class InterruptionManager:
             "⚡ INTERRUPTION DETECTED: fenced gen %d -> new gen %d (ts=%.4f) | '%s'",
             prev_gen,
             new_gen,
-            now,
+            ts,
             user_text[:60],
         )
-        return new_gen, now
+        return new_gen, ts
 
     def cancel_false_interruption(self) -> None:
         """

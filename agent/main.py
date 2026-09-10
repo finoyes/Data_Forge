@@ -174,7 +174,11 @@ class StudyAgent(Agent):
 def prewarm(proc: JobProcess) -> None:
     """Pre-warm Silero VAD model during process initialization."""
     logger.info("Pre-warming: loading Silero VAD model...")
-    proc.userdata["vad"] = silero.VAD.load()
+    proc.userdata["vad"] = silero.VAD.load(
+        min_speech_duration=0.05,
+        min_silence_duration=0.35,
+        activation_threshold=0.45,
+    )
     logger.info("Pre-warming complete.")
 
 
@@ -274,11 +278,15 @@ async def entrypoint(ctx: JobContext) -> None:
         use_websocket=True,
     )
 
-    vad = ctx.proc.userdata.get("vad") or silero.VAD.load()
+    vad = ctx.proc.userdata.get("vad") or silero.VAD.load(
+        min_speech_duration=0.05,
+        min_silence_duration=0.35,
+        activation_threshold=0.45,
+    )
 
-    # Balanced 3-pillar interruption handling:
-    # 1. min_duration=0.35s filters out micro-noise / coughs (<350ms)
-    # 2. min_words=1 requires at least 1 STT word for permanent turn commit
+    # Sub-300ms low-latency interruption handling:
+    # 1. min_duration=0.15s triggers within 150ms of speech (well below 300ms target)
+    # 2. min_words=0 enables immediate VAD audio cut without waiting for STT word detection
     # 3. backchannel_boundary=None eliminates the 1s lockout window
     # 4. resume_false_interruption=True with 1.0s timeout allows clean recovery on backchannels
     session = AgentSession(
@@ -290,8 +298,8 @@ async def entrypoint(ctx: JobContext) -> None:
             "interruption": {
                 "enabled": True,
                 "mode": "vad",
-                "min_duration": 0.35,
-                "min_words": 1,
+                "min_duration": 0.15,
+                "min_words": 0,
                 "resume_false_interruption": True,
                 "false_interruption_timeout": 1.0,
                 "backchannel_boundary": None,
@@ -375,6 +383,14 @@ async def entrypoint(ctx: JobContext) -> None:
                 )
 
             if turn_idx >= 0:
+                if pending_interruption["active"] and interruption_latency is not None:
+                    tracker.mark_interruption(
+                        turn_idx,
+                        pending_interruption["interrupt_ts"],
+                        interruption_mgr.current_generation_id,
+                    )
+                    tracker.mark_audio_stopped(turn_idx, stopped_ts)
+
                 metrics = tracker.flush_turn(turn_idx)
                 summary = interruption_mgr.get_summary()
                 dispatch_data({
@@ -422,17 +438,20 @@ async def entrypoint(ctx: JobContext) -> None:
         curr_turn = current_turn_index["value"]
 
         if was_barge_in:
-            new_gen, interrupt_ts = interruption_mgr.on_user_interrupt(user_text)
+            actual_onset = pending_interruption["interrupt_ts"] or time.monotonic()
+            new_gen, interrupt_ts = interruption_mgr.on_user_interrupt(
+                user_text, interrupt_ts=actual_onset
+            )
             lat_ms = pending_interruption["latency_ms"]
             if lat_ms is not None and interruption_mgr._current_event:
                 interruption_mgr._current_event.latency_ms = lat_ms
-                interruption_mgr._current_event.audio_stopped_ts = interrupt_ts + (lat_ms / 1000.0)
+                interruption_mgr._current_event.audio_stopped_ts = actual_onset + (lat_ms / 1000.0)
 
             if curr_turn >= 0:
-                tracker.mark_interruption(curr_turn, interrupt_ts, new_gen)
+                tracker.mark_interruption(curr_turn, actual_onset, new_gen)
                 if lat_ms is not None:
                     tracker.mark_audio_stopped(
-                        curr_turn, interrupt_ts + (lat_ms / 1000.0)
+                        curr_turn, actual_onset + (lat_ms / 1000.0)
                     )
 
             pending_interruption["active"] = False
